@@ -212,6 +212,7 @@ export async function generateCopilotInstructions(
     });
 
     let content = "";
+    let sessionError: Error | undefined;
 
     // Subscribe to events for progress and to capture content
     session.on((event) => {
@@ -228,7 +229,7 @@ export async function generateCopilotInstructions(
       } else if (e.type === "session.error") {
         const errorMsg = (e.data?.message as string) ?? "Unknown error";
         if (errorMsg.toLowerCase().includes("auth") || errorMsg.toLowerCase().includes("login")) {
-          throw new Error(
+          sessionError = new Error(
             "Copilot CLI not logged in. Run `copilot` then `/login` to authenticate."
           );
         }
@@ -254,8 +255,17 @@ ${existingSection}
 Output ONLY the markdown content for the instructions file, not wrapped in markdown code fences.`;
 
     progress("Analyzing codebase...");
-    await session.sendAndWait({ prompt }, 180000);
-    await session.destroy();
+    let sendError: unknown;
+    try {
+      await session.sendAndWait({ prompt }, 180000);
+    } catch (err) {
+      sendError = err;
+    } finally {
+      await session.destroy();
+    }
+    if (sessionError) throw sessionError;
+    if (sendError !== undefined)
+      throw sendError instanceof Error ? sendError : new Error(String(sendError));
 
     return content.trim() || "";
   } finally {
@@ -312,6 +322,7 @@ export async function generateAreaInstructions(
     });
 
     let content = "";
+    let sessionError: Error | undefined;
 
     session.on((event) => {
       const e = event as { type: string; data?: Record<string, unknown> };
@@ -327,7 +338,7 @@ export async function generateAreaInstructions(
       } else if (e.type === "session.error") {
         const errorMsg = (e.data?.message as string) ?? "Unknown error";
         if (errorMsg.toLowerCase().includes("auth") || errorMsg.toLowerCase().includes("login")) {
-          throw new Error(
+          sessionError = new Error(
             "Copilot CLI not logged in. Run `copilot` then `/login` to authenticate."
           );
         }
@@ -359,8 +370,17 @@ ${existingSection ? `- Do NOT duplicate content already covered by existing inst
 - Output ONLY the markdown content, no YAML frontmatter, no code fences`;
 
     progress(`Analyzing area "${area.name}"...`);
-    await session.sendAndWait({ prompt }, 180000);
-    await session.destroy();
+    let sendError: unknown;
+    try {
+      await session.sendAndWait({ prompt }, 180000);
+    } catch (err) {
+      sendError = err;
+    } finally {
+      await session.destroy();
+    }
+    if (sessionError) throw sessionError;
+    if (sendError !== undefined)
+      throw sendError instanceof Error ? sendError : new Error(String(sendError));
 
     return content.trim() || "";
   } finally {
