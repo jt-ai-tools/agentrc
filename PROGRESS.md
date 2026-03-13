@@ -1,5 +1,5 @@
 # 翻譯進度 (PROGRESS.md)
-最後更新日期: Fri Mar 13 08:24:11 CST 2026
+最後更新日期: Fri Mar 13 09:40:46 CST 2026
 
 | 檔案路徑 | 狀態 | 繁體中文版本 |
 | :--- | :--- | :--- |
@@ -8,8 +8,8 @@
 | ./CHANGELOG.md | ✅ Done | ./CHANGELOG_zh_TW.md |
 | ./examples/policies/README.md | ✅ Done | ./examples/policies/README_zh_TW.md |
 | ./examples/README.md | ✅ Done | ./examples/README_zh_TW.md |
-| ./.github/copilot-instructions.md | ⏳ Pending | ./.github/copilot-instructions_zh_TW.md |
-| ./.github/instructions/vscode-extension.instructions.md | ⏳ Pending | ./.github/instructions/vscode-extension.instructions_zh_TW.md |
+| ./.github/copilot-instructions.md | ✅ Done | ./.github/copilot-instructions_zh_TW.md |
+| ./.github/instructions/vscode-extension.instructions.md | ✅ Done | ./.github/instructions/vscode-extension.instructions_zh_TW.md |
 | ./.github/PULL_REQUEST_TEMPLATE.md | ⏳ Pending | ./.github/PULL_REQUEST_TEMPLATE_zh_TW.md |
 | ./.github/prompts/review.prompt.md | ⏳ Pending | ./.github/prompts/review.prompt_zh_TW.md |
 | ./.github/prompts/deslop.prompt.md | ⏳ Pending | ./.github/prompts/deslop.prompt_zh_TW.md |
@@ -24,8 +24,8 @@
 | ./.github/ISSUE_TEMPLATE/bug_report.md | ⏳ Pending | ./.github/ISSUE_TEMPLATE/bug_report_zh_TW.md |
 | ./README.md | ✅ Done | ./README_zh_TW.md |
 | ./CONTRIBUTING.md | ✅ Done | ./CONTRIBUTING_zh_TW.md |
-| ./docs/product.md | ⏳ Pending | ./docs/product_zh_TW.md |
-| ./docs/plugins.md | ⏳ Pending | ./docs/plugins_zh_TW.md |
+| ./docs/product.md | ✅ Done | ./docs/product_zh_TW.md |
+| ./docs/plugins.md | ✅ Done | ./docs/plugins_zh_TW.md |
 | ./SUPPORT.md | ✅ Done | ./SUPPORT_zh_TW.md |
 | ./vscode-extension/resources/walkthrough/eval.md | ⏳ Pending | ./vscode-extension/resources/walkthrough/eval_zh_TW.md |
 | ./vscode-extension/resources/walkthrough/readiness.md | ⏳ Pending | ./vscode-extension/resources/walkthrough/readiness_zh_TW.md |
