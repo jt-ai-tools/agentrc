@@ -1,5 +1,7 @@
 # AgentRC
 
+[繁體中文版](./README_zh_TW.md)
+
 > Prime your repositories for AI-assisted development.
 
 [![CI](https://github.com/microsoft/agentrc/actions/workflows/ci.yml/badge.svg)](https://github.com/microsoft/agentrc/actions/workflows/ci.yml)
