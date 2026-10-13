@@ -1,8 +1,11 @@
 import fs from "fs/promises";
 import path from "path";
+import { pathToFileURL } from "url";
 
-import { readJson } from "../utils/fs";
+import { readJson, stripJsonComments } from "../utils/fs";
 
+import type { PolicyPlugin } from "./policy/types";
+import { isNativePlugin, validateNativePlugin } from "./policy/types";
 import type { ReadinessCriterion, ReadinessContext } from "./readiness";
 
 // ─── Policy configuration types ───
@@ -158,10 +161,39 @@ export function parsePolicySources(raw: string | undefined): string[] | undefine
 
 // ─── Loading ───
 
+/**
+ * Normalize a native plugin export to ensure `meta.sourceType` and `meta.trust`
+ * are set correctly. Module-loaded plugins are always `sourceType: "module"` and
+ * `trust: "trusted-code"` regardless of what the export declares — a module
+ * cannot claim to be "builtin" or "safe-declarative".
+ */
+function normalizeNativePlugin(plugin: PolicyPlugin): PolicyPlugin {
+  return {
+    ...plugin,
+    meta: {
+      ...plugin.meta,
+      sourceType: "module",
+      trust: "trusted-code"
+    }
+  };
+}
+
+/**
+ * Load a policy from a file path or npm specifier.
+ *
+ * Returns either a PolicyConfig (for traditional criteria-based policies)
+ * or a PolicyPlugin (for native plugins that export the full plugin contract).
+ * Native plugins are detected via `isNativePlugin()`: they must have a `meta`
+ * object with a non-empty `meta.name` string, and must NOT have a root-level
+ * `name` string (which would indicate a PolicyConfig).
+ *
+ * Native plugin exports are normalised with `sourceType: "module"` and
+ * `trust: "trusted-code"` regardless of what the export declares.
+ */
 export async function loadPolicy(
   source: string,
   options?: { jsonOnly?: boolean }
-): Promise<PolicyConfig> {
+): Promise<PolicyConfig | PolicyPlugin> {
   const jsonOnly = options?.jsonOnly ?? false;
 
   // Local file path (relative or absolute)
@@ -182,8 +214,17 @@ export async function loadPolicy(
         );
       }
       try {
-        const mod = (await import(resolved)) as Record<string, unknown>;
+        // Use pathToFileURL to convert filesystem paths to file:// URLs.
+        // On Windows, path.resolve() returns paths like C:\... which dynamic
+        // import() treats as a URL scheme (c:), causing ERR_UNSUPPORTED_ESM_URL_SCHEME.
+        const mod = (await import(pathToFileURL(resolved).href)) as Record<string, unknown>;
         const config = (mod.default ?? mod) as unknown;
+        // Native PolicyPlugin exports have a `meta` property instead of a root-level `name`.
+        // Detect and return them directly without PolicyConfig validation.
+        if (isNativePlugin(config)) {
+          validateNativePlugin(config, source);
+          return normalizeNativePlugin(config);
+        }
         return validatePolicyConfig(config, source);
       } catch (err) {
         if (
@@ -198,7 +239,7 @@ export async function loadPolicy(
     // Unsupported extension — try as JSON
     try {
       const raw = await fs.readFile(resolved, "utf8");
-      const data = JSON.parse(raw) as unknown;
+      const data = JSON.parse(stripJsonComments(raw)) as unknown;
       return validatePolicyConfig(data, source, "json");
     } catch {
       throw new Error(
@@ -216,6 +257,11 @@ export async function loadPolicy(
   try {
     const mod = (await import(source)) as Record<string, unknown>;
     const config = (mod.default ?? mod) as unknown;
+    // Native PolicyPlugin exports from npm packages
+    if (isNativePlugin(config)) {
+      validateNativePlugin(config, source);
+      return normalizeNativePlugin(config);
+    }
     return validatePolicyConfig(config, source);
   } catch (err) {
     const message =

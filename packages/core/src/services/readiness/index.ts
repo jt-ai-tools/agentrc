@@ -7,7 +7,9 @@ import { loadPolicy, resolveChain } from "../policy";
 import { executePlugins } from "../policy/engine";
 import { loadPluginChain } from "../policy/loader";
 import type { PolicyContext } from "../policy/types";
+import { isNativePlugin } from "../policy/types";
 
+import { parseVscodeLocations } from "./checkers";
 import { buildCriteria } from "./criteria";
 import { buildExtras, runExtras } from "./extras";
 import { summarizePillars, summarizeLevels } from "./scoring";
@@ -35,7 +37,8 @@ export type {
   ReadinessContext,
   ReadinessCriterion,
   CheckResult,
-  InstructionConsistencyResult
+  InstructionConsistencyResult,
+  VscodeLocationSettings
 } from "./types";
 export { PILLAR_GROUPS, PILLAR_GROUP_NAMES } from "./types";
 export { groupPillars, getLevelName, getLevelDescription } from "./scoring";
@@ -57,13 +60,15 @@ export async function runReadinessReport(options: ReadinessOptions): Promise<Rea
   const rootFiles = await safeReadDir(repoPath);
   const rootPackageJson = await readJson(path.join(repoPath, "package.json"));
   const apps = analysis.apps?.length ? analysis.apps : [];
+  const vscodeLocations = await parseVscodeLocations(repoPath, rootFiles);
 
   const context: ReadinessContext = {
     repoPath,
     analysis,
     apps,
     rootFiles,
-    rootPackageJson
+    rootPackageJson,
+    vscodeLocations
   };
 
   // ── Policy resolution ──
@@ -86,14 +91,33 @@ export async function runReadinessReport(options: ReadinessOptions): Promise<Rea
 
   if (policySources?.length) {
     const policyConfigs: PolicyConfig[] = [];
+    let hasNativePlugin = false;
     for (const source of policySources) {
-      policyConfigs.push(await loadPolicy(source, { jsonOnly: isConfigSourced }));
+      const loaded = await loadPolicy(source, { jsonOnly: isConfigSourced });
+      // Native PolicyPlugin exports are handled by the engine path (loadPluginChain).
+      // Skip them here — they'll be loaded by loadPluginChain below.
+      if (isNativePlugin(loaded)) {
+        hasNativePlugin = true;
+        continue;
+      }
+      policyConfigs.push(loaded);
     }
-    const resolved = resolveChain(baseCriteria, baseExtras, policyConfigs);
-    resolvedCriteria = resolved.criteria;
-    resolvedExtras = resolved.extras;
-    passRateThreshold = resolved.thresholds.passRate;
-    policyInfo = { chain: resolved.chain, criteriaCount: resolved.criteria.length };
+    if (policyConfigs.length > 0) {
+      const resolved = resolveChain(baseCriteria, baseExtras, policyConfigs);
+      resolvedCriteria = resolved.criteria;
+      resolvedExtras = resolved.extras;
+      passRateThreshold = resolved.thresholds.passRate;
+      policyInfo = { chain: resolved.chain, criteriaCount: resolved.criteria.length };
+    } else {
+      resolvedCriteria = baseCriteria;
+      resolvedExtras = baseExtras;
+    }
+    // When native plugins are present, automatically enable the engine path
+    // so their detectors, hooks, and recommenders execute.
+    // Use a local copy to avoid mutating the caller's options object.
+    if (hasNativePlugin && !options.shadow) {
+      options = { ...options, shadow: true };
+    }
   } else {
     resolvedCriteria = baseCriteria;
     resolvedExtras = baseExtras;

@@ -1,4 +1,5 @@
 export { analyzeRepo, loadAgentrcConfig, detectWorkspaces } from "@agentrc/core/services/analyzer";
+export { scaffoldAgentrcConfig } from "@agentrc/core/services/configScaffold";
 export { generateConfigs } from "@agentrc/core/services/generator";
 export {
   generateCopilotInstructions,
@@ -23,5 +24,5 @@ export {
   getRepo as getAzureDevOpsRepo
 } from "@agentrc/core/services/azureDevops";
 export { isAgentrcFile } from "@agentrc/core/utils/pr";
-export { safeWriteFile } from "@agentrc/core/utils/fs";
+export { safeWriteFile, stripJsonComments } from "@agentrc/core/utils/fs";
 export { DEFAULT_MODEL } from "@agentrc/core/config";

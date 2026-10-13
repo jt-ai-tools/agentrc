@@ -1,7 +1,8 @@
+import { execFile } from "child_process";
 import path from "path";
+import { promisify } from "util";
 
-import { analyzeRepo, detectWorkspaces } from "@agentrc/core/services/analyzer";
-import type { AgentrcConfig, AgentrcConfigArea } from "@agentrc/core/services/analyzer";
+import { analyzeRepo } from "@agentrc/core/services/analyzer";
 import type {
   AzureDevOpsOrg,
   AzureDevOpsProject,
@@ -13,17 +14,18 @@ import {
   listProjects,
   listRepos
 } from "@agentrc/core/services/azureDevops";
+import { scaffoldAgentrcConfig } from "@agentrc/core/services/configScaffold";
 import type { FileAction } from "@agentrc/core/services/generator";
 import { generateConfigs } from "@agentrc/core/services/generator";
 import { buildAuthedUrl, cloneRepo, isGitRepo, setRemoteUrl } from "@agentrc/core/services/git";
 import type { GitHubRepo } from "@agentrc/core/services/github";
 import { getGitHubToken, listAccessibleRepos } from "@agentrc/core/services/github";
 import { generateCopilotInstructions } from "@agentrc/core/services/instructions";
-import { ensureDir, safeWriteFile, validateCachePath } from "@agentrc/core/utils/fs";
+import { ensureDir, fileExists, safeWriteFile, validateCachePath } from "@agentrc/core/utils/fs";
 import { prettyPrintSummary } from "@agentrc/core/utils/logger";
 import type { CommandResult } from "@agentrc/core/utils/output";
 import { outputResult, outputError, deriveFileStatus, shouldLog } from "@agentrc/core/utils/output";
-import { checkbox, select } from "@inquirer/prompts";
+import { checkbox, confirm, select } from "@inquirer/prompts";
 
 type InitOptions = {
   github?: boolean;
@@ -231,40 +233,21 @@ export async function initCommand(
   allFiles.push(...genResult.files);
 
   // Bootstrap agentrc.config.json with detected workspaces and standalone areas
-  if (analysis.areas && analysis.areas.length > 0) {
-    const configPath = path.join(repoPath, "agentrc.config.json");
-    const workspaces = await detectWorkspaces(repoPath, analysis.areas);
-
-    // Areas already claimed by a workspace (match by path prefix, not name)
-    const workspacePaths = workspaces.map((ws) => ws.path + "/");
-
-    // Standalone areas not inside any workspace
-    const standaloneAreas: AgentrcConfigArea[] = analysis.areas
-      .filter((a) => {
-        if (!a.path) return true;
-        const rel = path.relative(repoPath, a.path).replace(/\\/gu, "/");
-        return !workspacePaths.some((prefix) => rel.startsWith(prefix));
-      })
-      .map((a) => ({
-        name: a.name,
-        applyTo: a.applyTo,
-        ...(a.description ? { description: a.description } : {})
-      }));
-
-    const agentrcConfig: AgentrcConfig = {};
-    if (workspaces.length > 0) agentrcConfig.workspaces = workspaces;
-    if (standaloneAreas.length > 0) agentrcConfig.areas = standaloneAreas;
-
-    if (agentrcConfig.workspaces || agentrcConfig.areas) {
-      const configContent = JSON.stringify(agentrcConfig, null, 2) + "\n";
-      const { wrote } = await safeWriteFile(configPath, configContent, Boolean(options.force));
-      const rel = path.relative(process.cwd(), configPath);
-      allFiles.push({ path: rel, action: wrote ? "wrote" : "skipped" });
-      if (shouldLog(options)) {
-        process.stderr.write((wrote ? `Wrote ${rel}` : `Skipped ${rel} (exists)`) + "\n");
-      }
+  {
+    const result = await scaffoldAgentrcConfig(
+      repoPath,
+      analysis.areas ?? [],
+      Boolean(options.force)
+    );
+    const rel = path.relative(process.cwd(), result.configPath);
+    allFiles.push({ path: rel, action: result.wrote ? "wrote" : "skipped" });
+    if (shouldLog(options)) {
+      process.stderr.write((result.wrote ? `Wrote ${rel}` : `Skipped ${rel} (exists)`) + "\n");
     }
   }
+
+  // ── APM bridge: offer to initialize APM for cross-team distribution ──
+  await offerApmInit(repoPath, options);
 
   if (options.json) {
     const { ok, status } = deriveFileStatus(allFiles);
@@ -283,10 +266,64 @@ export async function initCommand(
       process.stderr.write(`${file.action === "wrote" ? "Wrote" : "Skipped"} ${file.path}\n`);
     }
     process.stderr.write("\nNext steps:\n");
-    process.stderr.write("  agentrc readiness             Check AI readiness across 9 pillars\n");
+    process.stderr.write("  agentrc readiness             Run readiness report across 9 pillars\n");
     if (analysis.areas && analysis.areas.length > 0) {
       process.stderr.write("  agentrc instructions --areas   Generate per-area instructions\n");
     }
     process.stderr.write("  agentrc eval --init            Scaffold evaluation test cases\n");
+  }
+}
+
+const execFileAsync = promisify(execFile);
+
+const APM_TIMEOUT_MS = 10_000;
+
+export async function isApmInstalled(): Promise<boolean> {
+  try {
+    await execFileAsync("apm", ["--version"], { timeout: APM_TIMEOUT_MS });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function offerApmInit(repoPath: string, options: InitOptions): Promise<void> {
+  if (options.json) return;
+
+  const hasApmYml = await fileExists(path.join(repoPath, "apm.yml"));
+  if (hasApmYml) return;
+
+  const apmAvailable = await isApmInstalled();
+
+  if (apmAvailable) {
+    const accepted = options.yes
+      ? true
+      : await confirm({
+          message: "Set up APM to install and share agent packages across your team?",
+          default: false
+        });
+    if (accepted) {
+      try {
+        await execFileAsync("apm", ["init", "--yes"], { cwd: repoPath, timeout: APM_TIMEOUT_MS });
+        if (shouldLog(options)) {
+          process.stderr.write(
+            "APM initialized — run `apm install <package>` to add shared agent packages.\n"
+          );
+        }
+      } catch (error) {
+        if (shouldLog(options)) {
+          process.stderr.write(
+            `Warning: APM init failed; continuing without APM: ${
+              error instanceof Error ? error.message : String(error)
+            }\n`
+          );
+        }
+      }
+    }
+  } else if (shouldLog(options)) {
+    process.stderr.write(
+      "\nTip: use APM to install shared agent packages and distribute your instructions across repos.\n" +
+        "     https://github.com/microsoft/apm\n"
+    );
   }
 }

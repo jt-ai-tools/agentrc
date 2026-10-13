@@ -15,6 +15,7 @@ type GenerateOptions = {
   json?: boolean;
   quiet?: boolean;
   strategy?: string;
+  dryRun?: boolean;
 };
 
 export async function generateCommand(
@@ -25,6 +26,16 @@ export async function generateCommand(
   const repoPath = path.resolve(repoPathArg ?? process.cwd());
 
   if (type === "instructions" || type === "agents") {
+    if (!options.quiet) {
+      process.stderr.write(
+        `⚠ \`generate ${type}\` is deprecated — use \`agentrc instructions\` directly.\n`
+      );
+    }
+    if (options.perApp && !options.quiet) {
+      process.stderr.write(
+        `⚠ --per-app is deprecated — use \`agentrc instructions --areas\` instead.\n`
+      );
+    }
     // Delegate to the canonical instructions command
     const output = type === "agents" ? path.join(repoPath, "AGENTS.md") : undefined;
     await instructionsCommand({
@@ -35,7 +46,8 @@ export async function generateCommand(
       json: options.json,
       quiet: options.quiet,
       areas: options.perApp,
-      strategy: options.strategy
+      strategy: options.strategy,
+      dryRun: options.dryRun
     });
     return;
   }
@@ -58,7 +70,8 @@ export async function generateCommand(
       repoPath,
       analysis,
       selections,
-      force: Boolean(options.force)
+      force: Boolean(options.force),
+      dryRun: Boolean(options.dryRun)
     });
   } catch (error) {
     outputError(
@@ -70,17 +83,25 @@ export async function generateCommand(
 
   if (options.json) {
     const { ok, status } = deriveFileStatus(genResult.files);
-    const result: CommandResult<{ type: string; files: FileAction[] }> = {
+    const result: CommandResult<{ type: string; files: FileAction[]; dryRun?: boolean }> = {
       ok,
       status,
-      data: { type, files: genResult.files }
+      data: { type, files: genResult.files, dryRun: options.dryRun }
     };
     outputResult(result, true);
     if (!ok) process.exitCode = 1;
   } else {
     for (const file of genResult.files) {
       if (shouldLog(options)) {
-        process.stderr.write(`${file.action === "wrote" ? "Wrote" : "Skipped"} ${file.path}\n`);
+        const prefix = options.dryRun
+          ? file.action === "wrote"
+            ? "[dry-run] Would write"
+            : "[dry-run] Would skip"
+          : file.action === "wrote"
+            ? "Wrote"
+            : "Skipped";
+        const suffix = options.dryRun && file.bytes !== undefined ? ` (${file.bytes} bytes)` : "";
+        process.stderr.write(`${prefix} ${file.path}${suffix}\n`);
       }
     }
     if (genResult.files.length === 0 && shouldLog(options)) {

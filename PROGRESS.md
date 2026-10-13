@@ -14,9 +14,9 @@
 | ./.github/prompts/review.prompt.md | ✅ Done | ./.github/prompts/review.prompt_zh_TW.md |
 | ./.github/prompts/deslop.prompt.md | ✅ Done | ./.github/prompts/deslop.prompt_zh_TW.md |
 | ./.github/prompts/generate-improvements.prompt.md | ✅ Done | ./.github/prompts/generate-improvements.prompt_zh_TW.md |
-| ./.github/workflows/ci-doctor.md | ✅ Done | ./.github/workflows/ci-doctor_zh_TW.md |
-| ./.github/workflows/daily-doc-updater.md | ✅ Done | ./.github/workflows/daily-doc-updater_zh_TW.md |
-| ./.github/workflows/code-simplifier.md | ✅ Done | ./.github/workflows/code-simplifier_zh_TW.md |
+| ./.github/workflows/ci-doctor.md | ✅ Done | ./docs/workflow-translations/zh-TW/ci-doctor_zh_TW.md |
+| ./.github/workflows/daily-doc-updater.md | ✅ Done | ./docs/workflow-translations/zh-TW/daily-doc-updater_zh_TW.md |
+| ./.github/workflows/code-simplifier.md | ✅ Done | ./docs/workflow-translations/zh-TW/code-simplifier_zh_TW.md |
 | ./.github/agents/code-review-opus.agent.md | ✅ Done | ./.github/agents/code-review-opus.agent_zh_TW.md |
 | ./.github/agents/code-review-gemini.agent.md | ✅ Done | ./.github/agents/code-review-gemini.agent_zh_TW.md |
 | ./.github/agents/code-review-codex.agent.md | ✅ Done | ./.github/agents/code-review-codex.agent_zh_TW.md |

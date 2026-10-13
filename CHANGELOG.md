@@ -2,6 +2,48 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Features
+
+- **Agent Plugins 1.0 support** — publish AgentRC's built-in skills with the portable `plugin.json` format and recognize standard skill, MCP, rule, agent, marketplace, and enabled-plugin signals during readiness checks
+- **`--dry-run` for generate** — preview which files would be created or skipped without writing anything (`agentrc generate mcp --dry-run`)
+- **JSONC support** — `agentrc.config.json`, `agentrc.eval.json`, and policy files now accept `//` and `/* */` comments
+- **Array eval expectations** — `expectation` field in eval configs accepts `string[]` for structured criteria
+
+### Bug Fixes
+
+- **Batch Instructions honors nested strategy** — the VS Code "Batch Instructions" command now generates hub + detail files (`.agents/*.md`, optional `CLAUDE.md`) for repositories configured with `strategy: "nested"` instead of a single flat `AGENTS.md` (#58)
+
+- **Config scaffolding for simple repos** — `agentrc init` and the TUI now create `agentrc.config.json` even when no areas are detected, producing a minimal `{}` stub. Previously failed with "No areas detected. Cannot scaffold agentrc.config.json."
+
+## [2.1.0]
+
+### Features
+
+- **Agent plugin & marketplace** — expose built-in instruction-generation skills as a VS Code agent plugin (`plugin/`) with marketplace manifest (`.github/plugin/marketplace.json`). Skills can be installed from source or discovered through the marketplace.
+- **SKILL.md-based prompts** — replace hardcoded inline prompts with SKILL.md assets loaded via the Copilot SDK `skillDirectories` option and invoked with `/skill-name` prefixes.
+- **Enhanced .NET detection** — F# support, framework parsing, and expanded signals (#60)
+- **De-branded terminology** — `--dry-run` flag, batch instructions command (#55)
+
+### Bug Fixes
+
+- Fix instruction generation error: `Dynamic require of "util" is not supported` (#52)
+- Fix Windows `.bat`/`.cmd` shim spawn failure in `copilotSdk.ts` (#53)
+
+### Documentation
+
+- Rewrite README as concise landing page, add 8 user-facing doc pages (getting-started, concepts, commands, configuration, policies, ci-integration, at-scale, extension) (#62)
+- Add cross-platform guidance for process spawning and ESM/CJS interop
+
+### Dependencies
+
+- Bump `simple-git` production dependency (#49)
+- Bump `github/gh-aw` from 0.50.5 to 0.57.2 (#51)
+- Bump `actions/download-artifact` from 6.0.0 to 8.0.0 (#48)
+- Bump dev dependencies (#50)
+- Bump `undici` in vscode-extension (#59)
+
 ## [2.0.0]
 
 ### Complete Rewrite

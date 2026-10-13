@@ -13,10 +13,16 @@ import {
   hasReadme,
   hasAnyFile,
   hasCustomInstructions,
+  hasAgentPluginInstructions,
+  hasCopilotPluginSetting,
+  hasNestedCopilotInstructions,
   hasFileBasedInstructions,
   hasMcpConfig,
   hasCustomAgents,
   hasCopilotSkills,
+  hasApmConfig,
+  hasApmLockfile,
+  hasApmInWorkflows,
   readAllDependencies,
   checkInstructionConsistency
 } from "./checkers";
@@ -54,7 +60,7 @@ export function buildCriteria(): ReadinessCriterion[] {
         return {
           status: found ? "pass" : "fail",
           reason: found ? undefined : "Missing type checking config (tsconfig or equivalent).",
-          evidence: ["tsconfig.json", "pyproject.toml", "mypy.ini"]
+          evidence: ["tsconfig.json", "tsconfig.base.json", "pyproject.toml", "mypy.ini"]
         };
       }
     },
@@ -278,7 +284,7 @@ export function buildCriteria(): ReadinessCriterion[] {
     },
     {
       id: "custom-instructions",
-      title: "Custom AI instructions or agent guidance",
+      title: "Custom instructions or agent guidance",
       pillar: "ai-tooling",
       level: 1,
       scope: "repo",
@@ -286,23 +292,37 @@ export function buildCriteria(): ReadinessCriterion[] {
       effort: "low",
       check: async (context) => {
         const rootFound = await hasCustomInstructions(context.repoPath);
-        if (rootFound.length === 0) {
+        const pluginInstructions = await hasAgentPluginInstructions(context.repoPath);
+        const nestedInstructions = (await hasNestedCopilotInstructions(context.repoPath)).filter(
+          (instruction) => !rootFound.includes(instruction)
+        );
+        const fileBasedInstructions = await hasFileBasedInstructions(
+          context.repoPath,
+          context.vscodeLocations?.instructionsLocations
+        );
+        const found = [
+          ...new Set([
+            ...rootFound,
+            ...nestedInstructions,
+            ...fileBasedInstructions,
+            ...pluginInstructions
+          ])
+        ];
+        if (found.length === 0) {
           return {
             status: "fail",
             reason:
-              "Missing custom AI instructions (e.g. copilot-instructions.md, CLAUDE.md, AGENTS.md, .cursorrules).",
+              "Missing custom instructions (e.g. copilot-instructions.md, AGENTS.md, CLAUDE.md, GEMINI.md, or *.instructions.md).",
             evidence: [
-              "copilot-instructions.md",
+              ".github/copilot-instructions.md",
               "CLAUDE.md",
               "AGENTS.md",
-              ".cursorrules",
-              ".github/copilot-instructions.md"
+              "GEMINI.md",
+              ".github/instructions/*.instructions.md"
             ]
           };
         }
 
-        // Check for file-based instructions (.github/instructions/*.instructions.md)
-        const fileBasedInstructions = await hasFileBasedInstructions(context.repoPath);
         const areas = context.analysis.areas ?? [];
 
         // For monorepos or repos with detected areas, check coverage
@@ -310,14 +330,36 @@ export function buildCriteria(): ReadinessCriterion[] {
           if (fileBasedInstructions.length === 0) {
             return {
               status: "pass",
-              reason: `Root instructions found, but no file-based instructions for ${areas.length} detected areas. Run \`agentrc instructions --areas\` to generate.`,
-              evidence: [...rootFound, ...areas.map((a) => `${a.name}: missing .instructions.md`)]
+              reason:
+                rootFound.length > 0 || nestedInstructions.length > 0
+                  ? `Repository instructions found, but no area instructions for ${areas.length} detected areas. Run \`agentrc instructions --areas\` to generate.`
+                  : `${pluginInstructions.length} Agent Plugin rule source(s) found, but no repository or area instructions.`,
+              evidence: [...found, ...areas.map((a) => `${a.name}: missing .instructions.md`)]
+            };
+          }
+          if (rootFound.length === 0) {
+            return {
+              status: "pass",
+              reason: `${fileBasedInstructions.length} file-based instruction(s) found, but no repository-wide instructions.`,
+              evidence: [...fileBasedInstructions, ...pluginInstructions]
             };
           }
           return {
             status: "pass",
-            reason: `Root + ${fileBasedInstructions.length} file-based instruction(s) found.`,
-            evidence: [...rootFound, ...fileBasedInstructions]
+            reason: `Root + ${fileBasedInstructions.length} area instruction(s) found.`,
+            evidence: found
+          };
+        }
+
+        // File-based instructions found (e.g. from VS Code location settings) without areas
+        if (fileBasedInstructions.length > 0) {
+          return {
+            status: "pass",
+            reason:
+              rootFound.length > 0
+                ? `Root + ${fileBasedInstructions.length} file-based instruction(s) found.`
+                : `${fileBasedInstructions.length} file-based instruction(s) found, but no repository-wide instructions.`,
+            evidence: found
           };
         }
 
@@ -344,7 +386,11 @@ export function buildCriteria(): ReadinessCriterion[] {
 
         return {
           status: "pass",
-          evidence: rootFound
+          reason:
+            rootFound.length === 0 && pluginInstructions.length > 0
+              ? `${pluginInstructions.length} Agent Plugin rule source(s) found, but no repository-wide instructions.`
+              : undefined,
+          evidence: found
         };
       }
     },
@@ -388,11 +434,20 @@ export function buildCriteria(): ReadinessCriterion[] {
         const found = await hasMcpConfig(context.repoPath);
         return {
           status: found.length > 0 ? "pass" : "fail",
-          reason: "Missing MCP (Model Context Protocol) configuration (e.g. .vscode/mcp.json).",
+          reason:
+            found.length > 0
+              ? undefined
+              : "Missing MCP (Model Context Protocol) configuration (e.g. .vscode/mcp.json or an Agent Plugin mcp.json).",
           evidence:
             found.length > 0
               ? found
-              : [".vscode/mcp.json", ".vscode/settings.json (mcp section)", "mcp.json"]
+              : [
+                  ".vscode/mcp.json",
+                  ".vscode/settings.json (mcp section)",
+                  ".mcp.json",
+                  ".github/mcp.json",
+                  "<agent-plugin>/mcp.json"
+                ]
         };
       }
     },
@@ -405,32 +460,149 @@ export function buildCriteria(): ReadinessCriterion[] {
       impact: "medium",
       effort: "medium",
       check: async (context) => {
-        const found = await hasCustomAgents(context.repoPath);
+        const found = await hasCustomAgents(
+          context.repoPath,
+          context.vscodeLocations?.agentLocations
+        );
         return {
           status: found.length > 0 ? "pass" : "fail",
-          reason: "No custom AI agents configured (e.g. .github/agents/, .copilot/agents/).",
+          reason:
+            found.length > 0
+              ? undefined
+              : "No custom AI agents configured (e.g. .github/agents/, .claude/agents/, or an Agent Plugin agents/ directory).",
           evidence:
             found.length > 0
               ? found
-              : [".github/agents/", ".copilot/agents/", ".github/copilot/agents/"]
+              : [".github/agents/", ".claude/agents/", "<agent-plugin>/com.github.copilot/agents/"]
         };
       }
     },
     {
       id: "copilot-skills",
-      title: "Copilot/Claude skills present",
+      title: "AI skills present",
       pillar: "ai-tooling",
       level: 3,
       scope: "repo",
       impact: "medium",
       effort: "medium",
       check: async (context) => {
-        const found = await hasCopilotSkills(context.repoPath);
+        const found = await hasCopilotSkills(
+          context.repoPath,
+          context.vscodeLocations?.skillsLocations
+        );
         return {
           status: found.length > 0 ? "pass" : "fail",
-          reason: "No Copilot or Claude skills found (e.g. .copilot/skills/, .github/skills/).",
+          reason:
+            found.length > 0
+              ? undefined
+              : "No AI skills found (e.g. .github/skills/, .agents/skills/, .claude/skills/, or an Agent Plugin skills/ directory).",
           evidence:
-            found.length > 0 ? found : [".copilot/skills/", ".github/skills/", ".claude/skills/"]
+            found.length > 0
+              ? found
+              : [".github/skills/", ".agents/skills/", ".claude/skills/", "<agent-plugin>/skills/"]
+        };
+      }
+    },
+    {
+      id: "plugin-marketplaces",
+      title: "Additional Copilot plugin marketplaces configured",
+      pillar: "ai-tooling",
+      level: 3,
+      scope: "repo",
+      impact: "low",
+      effort: "low",
+      check: async (context) => {
+        const found = await hasCopilotPluginSetting(context.repoPath, "extraKnownMarketplaces");
+        return {
+          status: found.length > 0 ? "pass" : "skip",
+          reason:
+            found.length > 0
+              ? undefined
+              : "No repository-scoped extraKnownMarketplaces setting found.",
+          evidence: found
+        };
+      }
+    },
+    {
+      id: "enabled-plugins",
+      title: "Copilot plugins enabled in repository settings",
+      pillar: "ai-tooling",
+      level: 3,
+      scope: "repo",
+      impact: "low",
+      effort: "low",
+      check: async (context) => {
+        const found = await hasCopilotPluginSetting(context.repoPath, "enabledPlugins");
+        return {
+          status: found.length > 0 ? "pass" : "skip",
+          reason:
+            found.length > 0 ? undefined : "No repository-scoped enabledPlugins setting found.",
+          evidence: found
+        };
+      }
+    },
+    {
+      id: "apm-config",
+      title: "APM package manifest present",
+      pillar: "ai-tooling",
+      level: 2,
+      scope: "repo",
+      impact: "medium",
+      effort: "low",
+      check: async (context) => {
+        const found = await hasApmConfig(context.repoPath);
+        return {
+          status: found ? "pass" : "fail",
+          reason: found
+            ? undefined
+            : "No apm.yml found. Use APM to install shared agent packages and keep instructions in sync across repos. See: https://github.com/microsoft/apm",
+          evidence: ["apm.yml"]
+        };
+      }
+    },
+    {
+      id: "apm-locked-deps",
+      title: "APM dependencies locked",
+      pillar: "ai-tooling",
+      level: 3,
+      scope: "repo",
+      impact: "medium",
+      effort: "low",
+      check: async (context) => {
+        const hasConfig = await hasApmConfig(context.repoPath);
+        if (!hasConfig) {
+          return { status: "skip", reason: "No apm.yml found \u2014 skipping lockfile check." };
+        }
+        const found = await hasApmLockfile(context.repoPath);
+        return {
+          status: found ? "pass" : "fail",
+          reason: found
+            ? undefined
+            : "apm.yml found but dependencies are not locked. Run `apm install` to generate apm.lock.yaml.",
+          evidence: ["apm.lock.yaml"]
+        };
+      }
+    },
+    {
+      id: "apm-ci-integration",
+      title: "APM integrated in CI pipeline",
+      pillar: "ai-tooling",
+      level: 4,
+      scope: "repo",
+      impact: "high",
+      effort: "medium",
+      check: async (context) => {
+        const hasConfig = await hasApmConfig(context.repoPath);
+        if (!hasConfig) {
+          return { status: "skip", reason: "No apm.yml found \u2014 skipping CI check." };
+        }
+        const found = await hasApmInWorkflows(context.repoPath);
+        return {
+          status: found ? "pass" : "fail",
+          reason: found
+            ? undefined
+            : "No APM step found in CI. Add `microsoft/apm-action` to your workflow to audit agent packages on every PR. See: https://github.com/microsoft/apm-action",
+          evidence: [".github/workflows/*.{yml,yaml}"]
         };
       }
     },

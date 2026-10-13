@@ -171,6 +171,9 @@ describe("buildCriteria baseline", () => {
     const criteria = buildCriteria();
     const ids = criteria.map((c) => c.id).sort();
     expect(ids).toEqual([
+      "apm-ci-integration",
+      "apm-config",
+      "apm-locked-deps",
       "area-build-script",
       "area-instructions",
       "area-readme",
@@ -183,6 +186,7 @@ describe("buildCriteria baseline", () => {
       "custom-agents",
       "custom-instructions",
       "dependabot",
+      "enabled-plugins",
       "env-example",
       "format-config",
       "instructions-consistency",
@@ -191,6 +195,7 @@ describe("buildCriteria baseline", () => {
       "lockfile",
       "mcp-config",
       "observability",
+      "plugin-marketplaces",
       "readme",
       "security-policy",
       "test-script",

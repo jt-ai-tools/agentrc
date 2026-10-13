@@ -11,6 +11,7 @@ import { sanitizeAreaName } from "./analyzer";
 import { assertCopilotCliReady } from "./copilot";
 import { createCopilotClient, loadCopilotSdk } from "./copilotSdk";
 import type { FileAction } from "./generator";
+import { getSkillDirectory } from "./skills";
 
 type CopilotClient = Awaited<ReturnType<typeof createCopilotClient>>;
 
@@ -170,6 +171,51 @@ export function buildExistingInstructionsSection(ctx: ExistingInstructionsContex
 }
 
 /**
+ * Build a prompt section embedding the freshly-generated root instruction content
+ * so nested (per-area / per-crate) generation knows what the root file already
+ * covers and avoids restating it. Emits nothing when no root content is provided.
+ */
+export function buildRootContextSection(rootContent?: string): string {
+  const trimmed = rootContent?.trim();
+  if (!trimmed) return "";
+
+  return [
+    "",
+    "## Root instructions already cover",
+    "The root instruction file already covers the following workspace-wide content. " +
+      "Do NOT repeat or restate it in this file; cover only this area/crate's unique details:",
+    "",
+    trimmed,
+    ""
+  ].join("\n");
+}
+
+/**
+ * Normalize the top-level heading of generated AGENTS.md content so it matches
+ * the file type instead of leaking copilot-instructions.md conventions.
+ * Rewrites "# Copilot Instructions: <name>" → "# <name>" using the provided
+ * component name (area/crate) when available, otherwise the name in the heading.
+ * Returns the content unchanged when no "Copilot Instructions" heading is present.
+ */
+export function normalizeAgentsHeading(content: string, componentName?: string): string {
+  // Only consider the first line as the document's top-level heading.
+  const headingRe = /^(?:\uFEFF)?#\s+Copilot Instructions(?:\s*:\s*(.*))?\s*$/iu;
+  const firstLineEnd = content.indexOf("\n");
+  const firstLine = (firstLineEnd === -1 ? content : content.slice(0, firstLineEnd)).trimEnd();
+  const match = headingRe.exec(firstLine);
+  if (!match) return content;
+
+  const fallback = match[1]?.trim();
+  const heading = componentName?.trim() || fallback;
+  if (!heading) return content;
+
+  const replacedFirstLine = firstLine.replace(headingRe, `# ${heading}`);
+  return firstLineEnd === -1
+    ? replacedFirstLine
+    : `${replacedFirstLine}\n${content.slice(firstLineEnd + 1)}`;
+}
+
+/**
  * Strip outer markdown code fences that LLMs sometimes wrap around generated file content.
  * Only removes a single outer fence (```markdown or bare ```) — internal fences are preserved.
  */
@@ -293,6 +339,8 @@ type GenerateInstructionsOptions = {
   strategy?: InstructionStrategy;
   detailDir?: string;
   claudeMd?: boolean;
+  /** Content of the already-generated root instruction file, used to avoid duplicating it in nested outputs. */
+  rootContent?: string;
 };
 
 export async function generateCopilotInstructions(
@@ -321,6 +369,7 @@ export async function generateCopilotInstructions(
       : "You are an expert codebase analyst. Your task is to generate a concise .github/copilot-instructions.md file. Use the available tools (glob, view, grep) to explore the codebase. When done, call the emit_file_content tool with the final markdown.";
 
     const { tool: emitTool, getContent } = await createEmitTool();
+    const rootSkillDir = getSkillDirectory("root-instructions");
 
     const session = await client.createSession({
       model: preferredModel,
@@ -332,7 +381,8 @@ export async function generateCopilotInstructions(
       tools: [emitTool],
       excludedTools: INSTRUCTION_GENERATION_EXCLUDED_TOOLS,
       onPermissionRequest: READ_ONLY_PERMISSION_HANDLER,
-      infiniteSessions: { enabled: false }
+      infiniteSessions: { enabled: false },
+      skillDirectories: [rootSkillDir]
     });
 
     await trySetAutopilot(session);
@@ -358,23 +408,9 @@ export async function generateCopilotInstructions(
       }
     });
 
-    // Simple prompt - let the agent use tools to explore
-    const prompt = `Analyze this codebase and generate a .github/copilot-instructions.md file.
-
-Fan out multiple Explore subagents to map out the codebase in parallel:
-1. Check for existing instruction files: glob for **/{.github/copilot-instructions.md,AGENT.md,CLAUDE.md,.cursorrules,README.md}
-2. Identify the tech stack: look at package.json, tsconfig.json, pyproject.toml, Cargo.toml, go.mod, *.csproj, *.sln, build.gradle, pom.xml, etc.
-3. Understand the structure: list key directories
-4. Detect monorepo structures: check for workspace configs (npm/pnpm/yarn workspaces, Cargo.toml [workspace], go.work, .sln solution files, settings.gradle include directives, pom.xml modules)
-
-Generate concise instructions (~20-50 lines) covering:
-- Tech stack and architecture
-- Build/test commands
-- Project-specific conventions
-- Key files/directories
-- Monorepo structure and per-app layout (if this is a monorepo, describe the workspace organization, how apps relate to each other, and any shared libraries)
-${existingSection}
-When you have the complete markdown content, call the \`emit_file_content\` tool with it. Do NOT output the file content directly in chat.`;
+    // Invoke the root-instructions skill with repo-specific context
+    const prompt = `/root-instructions Analyze this codebase and generate a .github/copilot-instructions.md file.
+${existingSection}`;
 
     progress("Analyzing codebase...");
     let sendError: unknown;
@@ -403,6 +439,8 @@ type GenerateAreaInstructionsOptions = {
   strategy?: InstructionStrategy;
   detailDir?: string;
   claudeMd?: boolean;
+  /** Content of the already-generated root instruction file, used to avoid duplicating it in area outputs. */
+  rootContent?: string;
 };
 
 export async function generateAreaInstructions(
@@ -430,10 +468,11 @@ export async function generateAreaInstructions(
     const preferredModel = options.model ?? DEFAULT_MODEL;
 
     const areaSystemContent = hasExistingInstructions
-      ? `You are an expert codebase analyst. Your task is to generate a concise .instructions.md file for a specific area of a codebase. This file will be used as a file-based custom instruction in VS Code Copilot, automatically applied when working on files matching certain patterns. This file should complement, not duplicate, existing instruction files. Use the Explore subagents and read-only tools to explore the codebase. When done, call the emit_file_content tool with the final markdown.`
-      : `You are an expert codebase analyst. Your task is to generate a concise .instructions.md file for a specific area of a codebase. This file will be used as a file-based custom instruction in VS Code Copilot, automatically applied when working on files matching certain patterns. Use the Explore subagents and read-only tools to explore the codebase. When done, call the emit_file_content tool with the final markdown.`;
+      ? `You are an expert codebase analyst. Your task is to generate a concise .instructions.md file for a specific area of a codebase. This file will be used as an area instruction in VS Code, automatically applied when working on files matching certain patterns. This file should complement, not duplicate, existing instruction files. Use the Explore subagents and read-only tools to explore the codebase. When done, call the emit_file_content tool with the final markdown.`
+      : `You are an expert codebase analyst. Your task is to generate a concise .instructions.md file for a specific area of a codebase. This file will be used as an area instruction in VS Code, automatically applied when working on files matching certain patterns. Use the Explore subagents and read-only tools to explore the codebase. When done, call the emit_file_content tool with the final markdown.`;
 
     const { tool: emitTool, getContent } = await createEmitTool();
+    const areaSkillDir = getSkillDirectory("area-instructions");
 
     const session = await client.createSession({
       model: preferredModel,
@@ -445,7 +484,8 @@ export async function generateAreaInstructions(
       tools: [emitTool],
       excludedTools: INSTRUCTION_GENERATION_EXCLUDED_TOOLS,
       onPermissionRequest: READ_ONLY_PERMISSION_HANDLER,
-      infiniteSessions: { enabled: false }
+      infiniteSessions: { enabled: false },
+      skillDirectories: [areaSkillDir]
     });
 
     await trySetAutopilot(session);
@@ -470,29 +510,12 @@ export async function generateAreaInstructions(
       }
     });
 
-    const prompt = `Analyze the "${area.name}" area of this codebase and generate a file-based instruction file.
+    // Invoke the area-instructions skill with area-specific context
+    const prompt = `/area-instructions Analyze the "${area.name}" area of this codebase and generate an area instruction file.
 
 This area covers files matching: ${applyToStr}
 ${area.description ? `Description: ${area.description}` : ""}
-
-Use tools to explore ONLY the files and directories within this area:
-1. List the key files: glob for ${applyToPatterns.map((p) => `"${p}"`).join(", ")}
-2. Identify the tech stack, dependencies, and frameworks used in this area
-3. Look at key source files to understand patterns and conventions specific to this area
-
-Generate concise instructions (~10-30 lines) covering:
-- What this area does and its role in the overall project
-- Area-specific tech stack, dependencies, and frameworks
-- Coding conventions and patterns specific to this area
-- Build/test commands relevant to this area (if different from root)
-- Key files and directory structure within this area
-
-IMPORTANT:
-- Focus ONLY on this specific area, not the whole repo
-- Do NOT repeat repo-wide information (that goes in the root copilot-instructions.md)
-- Keep it complementary to root instructions
-${existingSection ? `- Do NOT duplicate content already covered by existing instruction files\n${existingSection}` : ""}
-- When you have the complete markdown content, call the \`emit_file_content\` tool with it. Do NOT output the file content directly in chat.`;
+${existingSection ? `\nDo NOT duplicate content already covered by existing instruction files\n${existingSection}` : ""}`;
 
     progress(`Analyzing area "${area.name}"...`);
     let sendError: unknown;
@@ -726,6 +749,7 @@ async function generateNestedHub(
     childAreas?: Area[];
     model?: string;
     onProgress?: (message: string) => void;
+    rootContent?: string;
   }
 ): Promise<HubResult> {
   const progress = options.onProgress ?? (() => {});
@@ -735,6 +759,7 @@ async function generateNestedHub(
   const existingSection = buildExistingInstructionsSection(existingCtx);
 
   const { tool: emitTool, getContent } = await createEmitTool();
+  const nestedSkillDir = getSkillDirectory("nested-hub");
 
   const session = await client.createSession({
     model,
@@ -748,7 +773,8 @@ async function generateNestedHub(
     tools: [emitTool],
     excludedTools: INSTRUCTION_GENERATION_EXCLUDED_TOOLS,
     onPermissionRequest: READ_ONLY_PERMISSION_HANDLER,
-    infiniteSessions: { enabled: false }
+    infiniteSessions: { enabled: false },
+    skillDirectories: [nestedSkillDir]
   });
 
   await trySetAutopilot(session);
@@ -786,28 +812,14 @@ async function generateNestedHub(
     ? `\nThis is a sub-project of "${options.area.parentArea}". Include a note linking back to the parent area.`
     : "";
 
-  const prompt = `Analyze this codebase and generate a lean AGENTS.md hub file (~90-120 lines).${areaContext}${parentContext}
+  // Invoke the nested-hub skill with repo/area-specific context
+  const rootContextSection = buildRootContextSection(options.rootContent);
+  const prompt = `/nested-hub Generate a lean AGENTS.md hub file (~90-120 lines).${areaContext}${parentContext}
 
-Use tools to explore the codebase structure, tech stack, and conventions.
+Detail files go in \`${options.detailDir}/\`.${childContext}
 
-The hub should contain:
-- Project overview and purpose
-- Key concepts and architecture
-- Coding conventions and guardrails
-- A "## Detailed Instructions" section listing links to detail files in \`${options.detailDir}/\`${childContext}
-
-At the END of your output, emit a fenced JSON block with recommended topics for detail files:
-\`\`\`json
-[{"slug":"testing","title":"Testing Guide","description":"How to write and run tests"},{"slug":"architecture","title":"Architecture","description":"Codebase structure and patterns"}]
-\`\`\`
-
-Recommend 3-5 topics that would benefit from deep-dive detail files. Each slug becomes a filename: \`${options.detailDir}/{slug}.md\`.
-
-IMPORTANT:
-- Keep the hub LEAN — overview and guardrails only, details go in separate files
-- The JSON block will be parsed and removed from the final output
-${existingSection ? `- Do NOT duplicate content from existing instruction files\n${existingSection}` : ""}
-- When you have the complete markdown content (including the trailing JSON topic block), call the \`emit_file_content\` tool with it. Do NOT output the content directly in chat.`;
+Recommend 3-5 topics for deep-dive detail files. Each slug becomes: \`${options.detailDir}/{slug}.md\`.
+${rootContextSection}${existingSection ? `\nDo NOT duplicate content from existing instruction files\n${existingSection}` : ""}`;
 
   let sendError: unknown;
   try {
@@ -839,12 +851,14 @@ async function generateNestedDetail(
     area?: Area;
     model?: string;
     onProgress?: (message: string) => void;
+    rootContent?: string;
   }
 ): Promise<string> {
   const progress = options.onProgress ?? (() => {});
   const model = options.model ?? DEFAULT_MODEL;
 
   const { tool: emitTool, getContent } = await createEmitTool();
+  const detailSkillDir = getSkillDirectory("nested-detail");
 
   const session = await client.createSession({
     model,
@@ -856,7 +870,8 @@ async function generateNestedDetail(
     tools: [emitTool],
     excludedTools: INSTRUCTION_GENERATION_EXCLUDED_TOOLS,
     onPermissionRequest: READ_ONLY_PERMISSION_HANDLER,
-    infiniteSessions: { enabled: false }
+    infiniteSessions: { enabled: false },
+    skillDirectories: [detailSkillDir]
   });
 
   await trySetAutopilot(session);
@@ -884,22 +899,13 @@ async function generateNestedDetail(
     ? `Focus on the "${options.area.name}" area (files matching: ${Array.isArray(options.area.applyTo) ? options.area.applyTo.join(", ") : options.area.applyTo}).`
     : "Focus on the entire repository.";
 
-  const prompt = `Generate a deep-dive instruction file about "${options.topic.title}" for this codebase.
-${areaContext}
+  // Invoke the nested-detail skill with topic-specific context
+  const rootContextSection = buildRootContextSection(options.rootContent);
+  const prompt = `/nested-detail Generate a deep-dive instruction file about "${options.topic.title}" for this codebase.
+${areaContext}${rootContextSection}
 
 Topic: ${options.topic.title}
-Description: ${options.topic.description}
-
-Use tools to explore the codebase and understand the specific patterns, APIs, and conventions related to this topic.
-
-The file should:
-- Start with \`# ${options.topic.title}\`
-- Include \`**When to read:** {one-line trigger condition}\` right after the heading
-- Cover ~50-100 lines of practical, actionable guidance
-- Include code patterns and examples found in the actual codebase
-- Be specific to this codebase, not generic advice
-
-When you have the complete markdown content, call the \`emit_file_content\` tool with it. Do NOT output the content directly in chat.`;
+Description: ${options.topic.description}`;
 
   let sendError: unknown;
   try {
@@ -950,17 +956,23 @@ export async function generateNestedInstructions(
       area: options.area,
       childAreas: options.childAreas,
       model: options.model,
-      onProgress: options.onProgress
+      onProgress: options.onProgress,
+      rootContent: options.rootContent
     });
 
     // Determine output paths
     const basePath = options.area?.path ?? ".";
     const hubRelativePath = path.join(basePath, "AGENTS.md");
 
+    // Normalize the heading so generated AGENTS.md files don't carry a
+    // copilot-instructions.md title (e.g. "# Copilot Instructions: <crate> crate").
+    const componentName = options.area?.name ?? path.basename(options.repoPath);
+    const normalizedHubContent = normalizeAgentsHeading(hubContent, componentName);
+
     // Hub content: prepend frontmatter if area-scoped
-    let finalHubContent = hubContent;
+    let finalHubContent = normalizedHubContent;
     if (options.area) {
-      finalHubContent = `${buildAreaFrontmatter(options.area)}\n\n${hubContent}`;
+      finalHubContent = `${buildAreaFrontmatter(options.area)}\n\n${normalizedHubContent}`;
     }
 
     const result: NestedInstructionsResult = {
@@ -978,7 +990,8 @@ export async function generateNestedInstructions(
           topic,
           area: options.area,
           model: options.model,
-          onProgress: options.onProgress
+          onProgress: options.onProgress,
+          rootContent: options.rootContent
         });
         if (detailContent) {
           result.details.push({
@@ -1027,6 +1040,7 @@ export async function generateNestedAreaInstructions(
     model: options.model,
     onProgress: options.onProgress,
     detailDir: options.detailDir,
-    claudeMd: options.claudeMd
+    claudeMd: options.claudeMd,
+    rootContent: options.rootContent
   });
 }
