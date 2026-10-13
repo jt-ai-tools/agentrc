@@ -50,13 +50,13 @@ agentrc init
 
 ## 先決條件
 
-| 需求 | 備註 |
-| --------------------------------- | ---------------------------------------------------------------- |
-| **Node.js 20+** | 執行階段 |
-| **GitHub Copilot CLI** | 隨附於 VS Code Copilot Chat 擴充功能中 |
-| **Copilot 驗證** | 執行 `copilot` → `/login` |
-| **GitHub CLI** _(選填)_ | 用於批次處理和 PR：`brew install gh && gh auth login` |
-| **Azure DevOps PAT** _(選填)_ | 為 Azure DevOps 工作流設置 `AZURE_DEVOPS_PAT` |
+| 需求                          | 備註                                                  |
+| ----------------------------- | ----------------------------------------------------- |
+| **Node.js 20+**               | 執行階段                                              |
+| **GitHub Copilot CLI**        | 隨附於 VS Code Copilot Chat 擴充功能中                |
+| **Copilot 驗證**              | 執行 `copilot` → `/login`                             |
+| **GitHub CLI** _(選填)_       | 用於批次處理和 PR：`brew install gh && gh auth login` |
+| **Azure DevOps PAT** _(選填)_ | 為 Azure DevOps 工作流設置 `AZURE_DEVOPS_PAT`         |
 
 ## 命令
 
@@ -90,10 +90,10 @@ agentrc readiness --fail-level 3         # CI 門檻：若低於等級 3 則以�
 
 **成熟度等級：**
 
-| 等級 | 名稱 | 意義 |
-| ----- | ---------- | -------------------------------------------------- |
-| 1 | Functional | 已具備建置、測試和基礎工具 |
-| 2 | Documented | 存在 README、CONTRIBUTING 和自定義 AI 指令 |
+| 等級 | 名稱       | 意義                                       |
+| ---- | ---------- | ------------------------------------------ |
+| 1    | Functional | 已具備建置、測試和基礎工具                 |
+| 2    | Documented | 存在 README、CONTRIBUTING 和自定義 AI 指令 |
 
 在等級 2，AgentRC 還會檢查**指令一致性** — 當程式庫有多個 AI 指令文件（例如 `copilot-instructions.md`, `CLAUDE.md`, `AGENTS.md`）時，它會檢測它們是否發生分歧。符號連結或完全相同的檔案會通過檢查；分歧的檔案將失敗，並顯示相似度分數和合併建議。
 

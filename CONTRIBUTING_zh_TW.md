@@ -35,15 +35,15 @@
 
 所有 Pull Request 在合併前都必須通過以下必要的狀態檢查：
 
-| 工作項目 (Job) | 驗證內容 |
-| --------------------- | ----------------------------------------------- |
-| `lint` | ESLint + Prettier (根目錄) |
-| `lint-workflows` | 針對所有 `.github/workflows/*.yml` 的 actionlint |
-| `lint-extension` | ESLint (vscode-extension) |
-| `typecheck` | TypeScript (根目錄) |
-| `typecheck-extension` | TypeScript (vscode-extension) |
-| `test` | Vitest (Node 20 + 22, ubuntu + windows) |
-| `build` | tsup 建置 + CLI 版本斷言 + 擴充功能捆綁 |
+| 工作項目 (Job)        | 驗證內容                                         |
+| --------------------- | ------------------------------------------------ |
+| `lint`                | ESLint + Prettier (根目錄)                       |
+| `lint-workflows`      | 針對所有 `.github/workflows/*.yml` 的 actionlint |
+| `lint-extension`      | ESLint (vscode-extension)                        |
+| `typecheck`           | TypeScript (根目錄)                              |
+| `typecheck-extension` | TypeScript (vscode-extension)                    |
+| `test`                | Vitest (Node 20 + 22, ubuntu + windows)          |
+| `build`               | tsup 建置 + CLI 版本斷言 + 擴充功能捆綁          |
 
 要在 GitHub 中配置分支保護規則：
 

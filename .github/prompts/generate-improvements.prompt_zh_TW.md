@@ -29,17 +29,17 @@ description: 針對 AgentRC CLI 專案，在功能、錯誤修復、安全性、
 
 ### CLI 指令
 
-| 指令                      | 描述                                                          |
-| ------------------------- | ------------------------------------------------------------- |
-| `agentrc init`            | 互動式設定精靈（指令 + 配置）                                 |
-| `agentrc generate <type>` | 產生 `instructions`, `agents`, `mcp`, 或 `vscode` 配置        |
-| `agentrc instructions`    | 透過 Copilot SDK 產生 copilot-instructions.md                 |
-| `agentrc eval`            | 執行比較有/無指令情況的評估案例                               |
-| `agentrc readiness`       | 帶有可選視覺化 HTML 報告的 AI 就緒性評估                      |
-| `agentrc batch`           | 跨 GitHub/Azure 組織批次處理多個儲存庫                        |
-| `agentrc batch-readiness` | 跨多個儲存庫的批次就緒性報告                                  |
-| `agentrc pr`              | 為產生的配置自動建立分支/PR                                   |
-| `agentrc tui`             | 基於 Ink 的互動式終端 UI                                      |
+| 指令                      | 描述                                                   |
+| ------------------------- | ------------------------------------------------------ |
+| `agentrc init`            | 互動式設定精靈（指令 + 配置）                          |
+| `agentrc generate <type>` | 產生 `instructions`, `agents`, `mcp`, 或 `vscode` 配置 |
+| `agentrc instructions`    | 透過 Copilot SDK 產生 copilot-instructions.md          |
+| `agentrc eval`            | 執行比較有/無指令情況的評估案例                        |
+| `agentrc readiness`       | 帶有可選視覺化 HTML 報告的 AI 就緒性評估               |
+| `agentrc batch`           | 跨 GitHub/Azure 組織批次處理多個儲存庫                 |
+| `agentrc batch-readiness` | 跨多個儲存庫的批次就緒性報告                           |
+| `agentrc pr`              | 為產生的配置自動建立分支/PR                            |
+| `agentrc tui`             | 基於 Ink 的互動式終端 UI                               |
 
 ### 關鍵模式
 

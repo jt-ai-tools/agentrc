@@ -46,9 +46,9 @@ export { analyzeRepo } from "agentrc/services/analyzer.js";
 
 ## 與 CLI 的主要差異
 
-| 面向          | CLI           | 擴充功能       |
-| ------------- | ------------- | -------------- |
-| 模組格式      | ESM           | CommonJS       |
-| 打包工具      | tsup          | esbuild        |
-| Git 程式庫    | simple-git    | vscode.git API |
-| 輸出          | stdout/stderr | VS Code UI     |
+| 面向       | CLI           | 擴充功能       |
+| ---------- | ------------- | -------------- |
+| 模組格式   | ESM           | CommonJS       |
+| 打包工具   | tsup          | esbuild        |
+| Git 程式庫 | simple-git    | vscode.git API |
+| 輸出       | stdout/stderr | VS Code UI     |

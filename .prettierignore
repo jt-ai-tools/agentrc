@@ -10,3 +10,5 @@
 # Webapp has its own formatting; Dockerfile is not parseable by Prettier
 webapp/
 Dockerfile.webapp
+# Preserve byte-exact historical workflow translation snapshots
+/docs/workflow-translations/zh-TW/*.md
